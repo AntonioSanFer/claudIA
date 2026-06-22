@@ -22,7 +22,7 @@ from .bridge import run_bridge, selection_summary
 from .constants import DEFAULT_PORT
 from .litellm_config import Selection
 from .preflight import check_litellm, find_free_port, resolve_claude
-from .providers import AUTH_API_KEY, Provider
+from .providers import AUTH_API_KEY, AUTH_OAUTH, Provider
 
 
 @dataclass
@@ -163,6 +163,9 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
     from textual.widgets.option_list import Option
 
     from .catalog import list_models
+    from .oauth import ensure_oauth_login
+    from .oauth import logout as oauth_logout
+    from .oauth import oauth_status
     from .preflight import install_litellm
     from .providers import all_providers, get_provider
 
@@ -332,10 +335,24 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
                 self.app.exit(None)
 
     class CredentialScreen(Screen):
+        """Provider detail / credentials.
+
+        Keyboard-navigable: ↑/↓ (or Tab) move between fields and buttons, Enter
+        activates a focused button, and Esc goes back. For OAuth providers it
+        shows sign-in status and offers a one-click logout.
+        """
+
+        BINDINGS = [
+            ("up", "focus_previous", "Prev"),
+            ("down", "focus_next", "Next"),
+            ("escape", "go_back", "Back"),
+        ]
+
         CSS = """
         #form { padding: 1 2; height: auto; }
         Label { padding: 1 0 0 0; }
         Input { width: 100%; }
+        #oauth_status { padding: 1 0; }
         #buttons { padding: 1 0; align: left middle; height: auto; }
         Button { margin: 0 1 0 0; }
         """
@@ -343,18 +360,27 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
         def __init__(self, provider: Provider) -> None:
             super().__init__()
             self.provider = provider
+            self._is_oauth = provider.auth == AUTH_OAUTH
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
             yield Static(f"Credentials — {self.provider.display_name}", classes="title")
             cfg = state.load_config()
-            saved = secret_store.get_key(self.provider.id)
             with VerticalScroll(id="form"):
                 if self.provider.auth == AUTH_API_KEY:
+                    saved = secret_store.get_key(self.provider.id)
                     hint = f"(saved key ending {secret_store.mask(saved)} will be used if left blank)" if saved else ""
                     yield Label(f"API key {hint}")
                     yield Input(password=True, placeholder="sk-…", id="api_key")
                     yield Checkbox("Save this key", id="save_key", value=bool(saved))
+                elif self._is_oauth:
+                    st = oauth_status(self.provider)
+                    icon = "[green]v[/green]" if st.logged_in else "[yellow]o[/yellow]"
+                    yield Static(f"{icon} {st.detail}", id="oauth_status")
+                    yield Label(
+                        "Sign in now to load your live model list on the next screen; "
+                        "otherwise sign-in happens automatically on launch."
+                    )
                 else:
                     yield Label(f"No API key required ({self.provider.auth}).")
 
@@ -368,12 +394,55 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
                     yield Input(value=base_default, placeholder="https://…", id="api_base")
             with Horizontal(id="buttons"):
                 yield Button("Next", id="next", variant="primary")
+                if self._is_oauth:
+                    logged_in = oauth_status(self.provider).logged_in
+                    yield Button("Sign in", id="signin", variant="primary", disabled=logged_in)
+                    yield Button("Log out", id="logout", variant="warning", disabled=not logged_in)
                 yield Button("Back", id="back")
             yield Footer()
+
+        def _refresh_oauth(self) -> None:
+            st = oauth_status(self.provider)
+            icon = "[green]v[/green]" if st.logged_in else "[yellow]o[/yellow]"
+            self.query_one("#oauth_status", Static).update(f"{icon} {st.detail}")
+            self.query_one("#logout", Button).disabled = not st.logged_in
+            self.query_one("#signin", Button).disabled = st.logged_in
+
+        def _do_signin(self) -> None:
+            if oauth_status(self.provider).logged_in:
+                return
+            # Drop out of the TUI so the device-login prompt (verification URL +
+            # code) shows in the real terminal, then return and refresh status.
+            with self.app.suspend():
+                ok, _ = ensure_oauth_login(self.provider, report=print)
+                if ok:
+                    try:
+                        input("\nPress Enter to continue…")
+                    except (EOFError, KeyboardInterrupt):
+                        pass
+            self._refresh_oauth()
+            if oauth_status(self.provider).logged_in:
+                self.notify("Signed in — your live models will load on the next screen.")
+            else:
+                self.notify("Sign-in did not complete.", severity="warning")
+
+        def _do_logout(self) -> None:
+            removed = oauth_logout(self.provider)
+            self._refresh_oauth()
+            if removed:
+                self.notify("Logged out — LiteLLM will prompt for sign-in on next launch.")
+            else:
+                self.notify("No cached sign-in to remove.", severity="warning")
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             if event.button.id == "back":
                 self.dismiss(False)
+                return
+            if event.button.id == "logout":
+                self._do_logout()
+                return
+            if event.button.id == "signin":
+                self._do_signin()
                 return
             api_key = None
             save = False
@@ -398,6 +467,15 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
             if save and api_key:
                 secret_store.set_key(self.provider.id, api_key)
             self.dismiss({"api_key": api_key, "api_base": api_base})
+
+        def action_focus_next(self) -> None:
+            self.focus_next()
+
+        def action_focus_previous(self) -> None:
+            self.focus_previous()
+
+        def action_go_back(self) -> None:
+            self.dismiss(False)
 
     class ModelScreen(Screen):
         CSS = """
@@ -552,6 +630,13 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
                 )
                 return
 
+    # Expose inner screen classes for testing (they are closures otherwise).
+    ClaudIAApp._screens = {
+        "preflight": PreflightScreen,
+        "provider": ProviderScreen,
+        "credential": CredentialScreen,
+        "model": ModelScreen,
+    }
     return ClaudIAApp
 
 

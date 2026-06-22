@@ -65,6 +65,16 @@ def _parse(style: str, payload: object) -> list[str]:
     return sorted({i for i in ids if i})
 
 
+def has_live_endpoint(provider: Provider) -> bool:
+    """Whether a live model list can be fetched for this provider.
+
+    True when the provider declares a ``models_url``, or when it has a bespoke
+    fetcher (GitHub Copilot — auth/headers/base come from the OAuth token cache,
+    not a static URL).
+    """
+    return bool(provider.models_url) or provider.id == "github_copilot"
+
+
 def fetch_live(
     provider: Provider,
     api_key: Optional[str] = None,
@@ -72,6 +82,12 @@ def fetch_live(
     timeout: float = 8.0,
 ) -> list[str]:
     """Fetch the live model list. Raises on any failure (caller falls back)."""
+    if provider.id == "github_copilot":
+        # Imported here to avoid a hard dependency on the OAuth module for the
+        # common (non-OAuth) providers.
+        from .oauth import github_copilot_models
+
+        return github_copilot_models(timeout)
     url = resolve_models_url(provider, api_base)
     if not url:
         raise ValueError("provider has no model-list endpoint")
@@ -108,14 +124,14 @@ def list_models(
     returning the preloaded list so the picker always has something to show.
     """
     error: Optional[str] = None
-    if allow_network and provider.models_url:
+    if not has_live_endpoint(provider):
+        error = "no live endpoint for this provider"
+    elif allow_network:
         try:
             models = fetch_live(provider, api_key, api_base, timeout)
             return ModelCatalog(models=models, source="live")
         except Exception as exc:  # noqa: BLE001 - any failure -> fallback
             error = _humanize_error(exc)
-    elif not provider.models_url:
-        error = "no live endpoint for this provider"
     else:
         error = "network disabled"
     return ModelCatalog(

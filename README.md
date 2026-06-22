@@ -59,6 +59,22 @@ next time** records a preference (`skip_preflight_when_ok` in `config.json`) so
 future launches run the checks silently and only show this screen if a problem is
 found (no `claude`, or LiteLLM missing).
 
+The provider credential screen is likewise keyboard-navigable: **↑/↓** (or Tab)
+move between fields and buttons, **Enter** activates a focused button, and **Esc**
+goes back. For OAuth providers (e.g. **GitHub Copilot**), ClaudIA shows your
+current sign-in status (and token expiry, when known) and offers a **Sign in**
+button — it drops out of the TUI so the GitHub device-login prompt appears in
+your terminal, then returns. Signing in here (rather than waiting for launch)
+means the **next** screen can load your *live* model list instead of the
+preloaded fallback. A **Log out** button clears LiteLLM's cached tokens so the
+next launch re-prompts for sign-in.
+
+When you launch an OAuth provider that isn't signed in yet, ClaudIA runs the
+one-time GitHub **device-login** flow in the foreground *before* starting the
+proxy, so the "visit github.com/login/device and enter code …" prompt appears
+clearly in your terminal instead of being buried in the proxy log. Once the
+token is cached, subsequent launches start silently.
+
 ### Headless CLI
 
 ```bash
@@ -95,9 +111,13 @@ Key flags: `--small-model`, `--port`, `--no-catch-all`, `--no-install`.
 
 The picker shows a **live model list** pulled from the provider's own
 OpenAI-compatible `/models` endpoint (Ollama uses `/api/tags`), so you see
-exactly what your key can reach. When there's no network, no endpoint for that
-provider (Azure, Copilot), or the request fails, it falls back to a **preloaded**
-set of suggested models. You can always type any model id by hand — the list is a
+exactly what your key can reach. **GitHub Copilot** is included: once you're
+signed in, ClaudIA fetches your account's chat models from the Copilot endpoint
+(using the cached Copilot token, the editor headers it requires, and your
+per-account API base), filtered to the models the official pickers show. When
+there's no network, no endpoint for that provider (Azure), the Copilot sign-in
+isn't cached yet, or the request fails, it falls back to a **preloaded** set of
+suggested models. You can always type any model id by hand — the list is a
 convenience, not a constraint. In the TUI, type in the *Main model* field to
 filter the list live; in the CLI use `claudia run --list-models` (add `--offline`
 to force the preloaded set).
@@ -149,6 +169,7 @@ claudia/
   preflight.py       # claude resolution, LiteLLM detect/install, port pick
   providers.py       # provider registry (incl. model-list endpoints)
   catalog.py         # live model fetch + preloaded fallback
+  oauth.py           # OAuth provider login status + logout (GitHub Copilot)
   litellm_config.py  # config.yaml generation
   proxy.py           # LiteLLM proxy lifecycle
   launcher.py        # env build + spawn claude

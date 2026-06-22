@@ -157,8 +157,10 @@ _PROVIDERS: tuple[Provider, ...] = (
         display_name="GitHub Copilot",
         prefix="github_copilot/",
         auth=AUTH_OAUTH,
-        suggested_models=("gpt-4o", "claude-3.5-sonnet"),
+        suggested_models=("gpt-4.1", "gpt-4o", "claude-sonnet-4.6", "gpt-5-mini"),
         notes="Uses your Copilot subscription auth, not a plain API key.",
+        # Live list comes from the Copilot token cache, not a static URL — see
+        # catalog.has_live_endpoint / oauth.github_copilot_models.
         models_url=None,
     ),
     Provider(

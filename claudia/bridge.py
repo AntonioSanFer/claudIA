@@ -20,6 +20,7 @@ from .launcher import (
     launch_claude,
 )
 from .litellm_config import Selection, write_config
+from .oauth import ensure_oauth_login
 from .paths import generated_config_file
 from .proxy import ProxyManager
 from .secrets import mask
@@ -59,6 +60,11 @@ def run_bridge(
 
     write_config(selection, config_path)
     report(f"Wrote LiteLLM config -> {config_path}")
+
+    # For OAuth providers (e.g. GitHub Copilot), run the device-login in the
+    # foreground now so its prompt is visible here rather than buried in the
+    # proxy log. Best effort: on failure we proceed and let the proxy prompt.
+    ensure_oauth_login(selection.provider, report)
 
     proxy_env = build_proxy_env(selection, api_key, master_key)
     proxy = ProxyManager(config_path, port, proxy_env)

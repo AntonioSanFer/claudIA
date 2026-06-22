@@ -82,11 +82,37 @@ def test_list_models_offline_uses_preloaded(monkeypatch):
 
 
 def test_list_models_no_endpoint_provider():
-    p = get_provider("github_copilot")  # models_url=None
+    p = get_provider("azure")  # models_url=None and no bespoke fetcher
     result = catalog.list_models(p, api_key="x")
     assert not result.is_live
     assert result.models == list(p.suggested_models)
     assert "no live endpoint" in result.error
+
+
+def test_github_copilot_has_live_endpoint():
+    # Copilot has no models_url but does have a bespoke (token-cache) fetcher.
+    assert catalog.has_live_endpoint(get_provider("github_copilot"))
+
+
+def test_list_models_copilot_falls_back_when_signed_out(monkeypatch, tmp_path):
+    # Point the Copilot token cache at an empty dir -> "not signed in" -> the
+    # live fetch raises and we fall back to the preloaded list (no network).
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    p = get_provider("github_copilot")
+    result = catalog.list_models(p)
+    assert not result.is_live
+    assert result.models == list(p.suggested_models)
+    assert result.error  # a reason is recorded
+
+
+def test_list_models_copilot_live(monkeypatch):
+    p = get_provider("github_copilot")
+    from claudia import oauth
+
+    monkeypatch.setattr(oauth, "github_copilot_models", lambda timeout=8.0: ["claude-sonnet-4.6", "gpt-4.1"])
+    result = catalog.list_models(p)
+    assert result.is_live
+    assert result.models == ["claude-sonnet-4.6", "gpt-4.1"]
 
 
 def test_fetch_live_raises_without_endpoint():
