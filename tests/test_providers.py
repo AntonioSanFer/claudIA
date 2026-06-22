@@ -8,6 +8,7 @@ from claudia.providers import (
     AUTH_OAUTH,
     all_providers,
     get_provider,
+    needs_responses_api,
     provider_ids,
 )
 
@@ -61,3 +62,25 @@ def test_providers_requiring_base_have_flag():
     assert ollama.default_api_base
     assert ollama.auth == AUTH_NONE
     assert not ollama.needs_api_key
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["gpt-5.4", "gpt-5.5", "gpt-6", "gpt-5.1-codex", "gpt-5-codex", "GPT-5.4"],
+)
+def test_copilot_models_needing_responses_api(model):
+    assert needs_responses_api("github_copilot", model)
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["gpt-5", "gpt-5-mini", "gpt-5.3", "gpt-4o", "gpt-4.1", "claude-sonnet-4.6"],
+)
+def test_copilot_models_staying_on_chat(model):
+    assert not needs_responses_api("github_copilot", model)
+
+
+def test_responses_api_only_for_copilot():
+    # The same gpt-5.4 string on another provider is unaffected.
+    assert not needs_responses_api("openai", "gpt-5.4")
+    assert not needs_responses_api("openrouter", "gpt-5.1-codex")

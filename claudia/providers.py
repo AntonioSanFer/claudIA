@@ -6,6 +6,7 @@ A declarative table of supported providers. Adding a provider is adding one
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -186,6 +187,35 @@ _PROVIDERS: tuple[Provider, ...] = (
         models_url="{api_base}/models",
     ),
 )
+
+# --- Responses-API routing --------------------------------------------------
+# GitHub Copilot rejects the tools + reasoning_effort combination (which Claude
+# Code always sends) on /v1/chat/completions for gpt-5.4 and newer, and for the
+# *-codex models. LiteLLM routes those to /v1/responses when the config entry
+# carries `model_info: { mode: responses }` — which keeps the reasoning slider
+# working instead of having drop_params silently strip reasoning_effort.
+_RESPONSES_ONLY_PROVIDER = "github_copilot"
+_GPT_VERSION_RE = re.compile(r"gpt-(\d+)(?:\.(\d+))?")
+
+
+def needs_responses_api(provider_id: str, model_id: str) -> bool:
+    """Whether `model_id` must use the Responses API instead of chat/completions.
+
+    Only GitHub Copilot is affected; for everyone else this is always False.
+    Returns True for the *-codex models and for gpt-5.4 or newer.
+    """
+    if provider_id != _RESPONSES_ONLY_PROVIDER:
+        return False
+    model = model_id.strip().lower()
+    if "codex" in model:
+        return True
+    m = _GPT_VERSION_RE.search(model)
+    if not m:
+        return False
+    major = int(m.group(1))
+    minor = int(m.group(2) or 0)
+    return (major, minor) >= (5, 4)
+
 
 _BY_ID = {p.id: p for p in _PROVIDERS}
 

@@ -83,6 +83,42 @@ def test_drop_params_enabled():
     assert "drop_params: true" in generate_config(sel)
 
 
+def test_copilot_responses_mode_on_main():
+    sel = Selection(provider_id="github_copilot", main_model="gpt-5.4")
+    cfg = generate_config(sel)
+    # main, small (defaults to main), and the catch-all all carry responses mode.
+    assert cfg.count("mode: responses") == 3
+    assert "model_info:" in cfg
+
+
+def test_copilot_no_responses_mode_for_chat_model():
+    sel = Selection(provider_id="github_copilot", main_model="gpt-4.1")
+    cfg = generate_config(sel)
+    assert "mode: responses" not in cfg
+    assert "model_info:" not in cfg
+
+
+def test_copilot_responses_mode_independent_per_tier():
+    # gpt-5.4 main needs responses; gpt-4.1 small stays on chat.
+    sel = Selection(
+        provider_id="github_copilot",
+        main_model="gpt-5.4",
+        small_model="gpt-4.1",
+        catch_all=False,
+    )
+    cfg = generate_config(sel)
+    # Only the main entry carries it (catch_all disabled).
+    assert cfg.count("mode: responses") == 1
+    try:
+        import yaml
+    except Exception:
+        return
+    data = yaml.safe_load(cfg)
+    by_name = {m["model_name"]: m for m in data["model_list"]}
+    assert by_name[MAIN_ALIAS]["model_info"]["mode"] == "responses"
+    assert "model_info" not in by_name[SMALL_ALIAS]
+
+
 def test_write_config_roundtrip(tmp_path):
     sel = Selection(provider_id="groq", main_model="llama-3.3-70b-versatile")
     out = tmp_path / "nested" / "litellm.config.yaml"

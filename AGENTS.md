@@ -175,6 +175,34 @@ The provider API key and the proxy master key are passed to the LiteLLM process
 via environment variables (`os.environ/...` references in the YAML), **never
 written into the YAML file**, so the config on disk contains no secrets.
 
+### Responses-API routing (GitHub Copilot gpt-5.4+/codex)
+
+Claude Code always sends `tools` together with `reasoning_effort`. GitHub
+Copilot **rejects that combination on `/v1/chat/completions`** for `gpt-5.4` and
+newer (and for the `*-codex` models), returning:
+
+```
+Function tools with reasoning_effort are not supported for gpt-5.4 in
+/v1/chat/completions. Please use /v1/responses instead.
+```
+
+For those models the generator emits `model_info: { mode: responses }` on the
+entry so LiteLLM routes the request to `/v1/responses`. This keeps the reasoning
+slider working instead of having `drop_params` silently strip `reasoning_effort`.
+
+```yaml
+  - model_name: claudia-main
+    model_info:
+      mode: responses          # -> /v1/responses instead of /chat/completions
+    litellm_params:
+      model: github_copilot/gpt-5.4
+```
+
+The decision is made **per tier** by `providers.needs_responses_api(provider_id,
+model_id)` — only `github_copilot` is affected, so a chat-only small model (e.g.
+`gpt-4.1`) stays on `/chat/completions` while main goes through Responses. The
+catch-all (`"*"`) inherits the main model's mode since it maps to main.
+
 ---
 
 ## 7. LiteLLM auto-install (startup check)
@@ -236,7 +264,7 @@ provider prefix.
 |---|---|---|---|
 | DeepSeek | `deepseek/` | API key | Direct DeepSeek API. |
 | OpenRouter | `openrouter/` | API key | Gateway to many models; single key. |
-| GitHub Copilot | `github_copilot/` | OAuth token | Uses Copilot subscription auth, not a plain key. |
+| GitHub Copilot | `github_copilot/` | OAuth token | Uses Copilot subscription auth, not a plain key. gpt-5.4+/codex are routed to the Responses API (§6). |
 | Groq | `groq/` | API key | Fast inference. |
 | Together / Fireworks | `together_ai/`, `fireworks_ai/` | API key | Open models. |
 | Mistral | `mistral/` | API key | |
