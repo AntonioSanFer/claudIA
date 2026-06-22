@@ -1,5 +1,7 @@
 ## pycache
-
 .pytest_cache
 claudia/__pycache__
 tests/__pycache__
+
+## Claudia meta
+claudia.egg-info
