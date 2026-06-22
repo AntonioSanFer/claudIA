@@ -256,8 +256,11 @@ and a few suggested model ids to pre-populate the picker.
 2. **Provider picker** — list of providers from the registry; remembers last used.
 3. **Credential entry** — masked API-key field (or "use saved", or OAuth flow for
    Copilot, or `api_base` for Ollama/custom). Option to save to keyring.
-4. **Model selection** — choose main model (suggested list + free-text entry);
-   optionally choose a distinct small/fast model (default: reuse main).
+4. **Model selection** — choose main model from a **live model list** fetched
+   from the provider's OpenAI-compatible `/models` endpoint (Ollama: `/api/tags`),
+   with type-to-filter; falls back to a preloaded suggested list when offline or
+   unsupported. Free-text entry is always allowed. Optionally choose a distinct
+   small/fast model (default: reuse main). See `claudia/catalog.py`.
 5. **Launch** — generate config → start proxy → health-gate → spawn `claude`.
    Show the effective mapping ("Claude Code → claudia-main → openrouter/…").
 6. **Running** — hand the terminal to Claude Code. On its exit, return to a
@@ -353,7 +356,13 @@ claudIA/
 - **M4 — Provider breadth:** registry of all §9 providers + custom endpoint;
   "test connection".
 - **M5 — Polish:** model-tier mapping for `/model`, logs view, cross-platform
-  hardening, docs.
+  hardening, docs. **(done)** — plus a live/preloaded model catalog
+  (`claudia/catalog.py`), `claudia logs`, and `claudia run --list-models`.
+
+### Status
+M1, M2, M3, and M5 are implemented and verified (proxy lifecycle smoke-tested,
+TUI driven via Textual's pilot, 51 unit tests). M4 (provider-breadth
+"test connection") is the main remaining item.
 
 ---
 

@@ -15,6 +15,7 @@ from typing import Optional
 from . import secrets as secret_store
 from . import state
 from .bridge import run_bridge, selection_summary
+from .catalog import list_models
 from .constants import DEFAULT_PORT, PROVIDER_KEY_ENV
 from .litellm_config import Selection, generate_config
 from .preflight import (
@@ -76,6 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="List supported providers and exit.",
     )
     parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List the chosen provider's models (live if reachable) and exit.",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Never hit the network for model lists; use preloaded models.",
+    )
+    parser.add_argument(
         "claude_args",
         nargs=argparse.REMAINDER,
         help="Arguments after `--` are forwarded to claude.",
@@ -105,6 +116,32 @@ def _print_providers() -> None:
     print()
 
 
+def _list_models_cmd(args, provider, cfg) -> int:
+    """`claudia run --list-models` — print live (or preloaded) models for a provider."""
+    api_base = args.api_base
+    if not api_base and cfg.last_provider == provider.id:
+        api_base = cfg.last_api_base
+    api_base = api_base or provider.default_api_base
+    api_key = _resolve_api_key(args, provider)
+
+    catalog = list_models(
+        provider,
+        api_key=api_key,
+        api_base=api_base,
+        allow_network=not args.offline,
+    )
+    label = "live" if catalog.is_live else "preloaded"
+    print(f"{provider.display_name}: {len(catalog.models)} models ({label})")
+    if catalog.error and not catalog.is_live:
+        print(f"  (live fetch unavailable: {catalog.error})")
+    print()
+    for model_id in catalog.models:
+        print(f"  {model_id}")
+    if not catalog.models:
+        print("  (none — pass --model with any id you know is valid)")
+    return 0
+
+
 def _strip_leading_dashdash(rest: list[str]) -> list[str]:
     # argparse.REMAINDER keeps the leading `--`; drop it for a clean argv.
     if rest and rest[0] == "--":
@@ -128,6 +165,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     except KeyError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+    if args.list_models:
+        return _list_models_cmd(args, provider, cfg)
 
     # Model resolution: flag → saved (same provider) → first suggested.
     main_model = args.model

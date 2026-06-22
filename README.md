@@ -17,7 +17,7 @@ Claude Code ──Anthropic /v1/messages──▶ LiteLLM proxy ──OpenAI /ch
 
 ## Status
 
-Implemented through **M3** of the roadmap:
+Implemented through **M5** of the roadmap:
 
 - **M1 — CLI bridge:** `claudia run` generates a LiteLLM config, starts the proxy,
   launches `claude` against it, and tears down cleanly.
@@ -25,6 +25,11 @@ Implemented through **M3** of the roadmap:
   (optionally) auto-installs `litellm[proxy]`, and picks a free loopback port.
 - **M3 — TUI:** an interactive wizard for provider / credentials / model, with
   saved state and OS-keyring secret storage.
+- **M5 — Polish:** live/preloaded model list, `/model` tier mapping, a `logs`
+  view, and cross-platform hardening (Windows process-tree teardown, UTF-8 proxy
+  I/O, robust port detection).
+
+(M4 — provider-breadth "test connection" — is the main remaining item.)
 
 ## Install
 
@@ -47,6 +52,13 @@ claudia
 Walks you through preflight → provider → credentials → model, then launches
 Claude Code. On exit it offers to relaunch.
 
+The preflight screen is keyboard-navigable: **←/→** (or Tab) move between
+actions, **Enter** activates the focused one, and **c**/**s**/**i**/**q** are
+direct shortcuts (Continue / Skip-next-time / Install / Quit). Choosing **Skip
+next time** records a preference (`skip_preflight_when_ok` in `config.json`) so
+future launches run the checks silently and only show this screen if a problem is
+found (no `claude`, or LiteLLM missing).
+
 ### Headless CLI
 
 ```bash
@@ -66,11 +78,29 @@ claudia run --print-config --provider deepseek --model deepseek-chat
 # List supported providers
 claudia run --list-providers
 
+# List a provider's models — live from its API, or preloaded if offline
+claudia run --list-models --provider openrouter
+claudia run --list-models --provider deepseek --offline
+
+# Tail the proxy log from the last run
+claudia logs 100
+
 # Forward args to claude after `--`
 claudia run --provider openrouter --model deepseek/deepseek-chat -- --help
 ```
 
 Key flags: `--small-model`, `--port`, `--no-catch-all`, `--no-install`.
+
+## Model list
+
+The picker shows a **live model list** pulled from the provider's own
+OpenAI-compatible `/models` endpoint (Ollama uses `/api/tags`), so you see
+exactly what your key can reach. When there's no network, no endpoint for that
+provider (Azure, Copilot), or the request fails, it falls back to a **preloaded**
+set of suggested models. You can always type any model id by hand — the list is a
+convenience, not a constraint. In the TUI, type in the *Main model* field to
+filter the list live; in the CLI use `claudia run --list-models` (add `--offline`
+to force the preloaded set).
 
 ## How it works
 
@@ -117,7 +147,8 @@ claudia/
   cli.py             # headless `claudia run`
   bridge.py          # config -> proxy -> claude -> teardown orchestration
   preflight.py       # claude resolution, LiteLLM detect/install, port pick
-  providers.py       # provider registry
+  providers.py       # provider registry (incl. model-list endpoints)
+  catalog.py         # live model fetch + preloaded fallback
   litellm_config.py  # config.yaml generation
   proxy.py           # LiteLLM proxy lifecycle
   launcher.py        # env build + spawn claude

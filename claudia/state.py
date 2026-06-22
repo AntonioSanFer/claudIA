@@ -31,6 +31,7 @@ class AppConfig:
     claude_command: Optional[str] = None
     preferred_port: int = DEFAULT_PORT
     litellm_version: Optional[str] = None
+    skip_preflight_when_ok: bool = False
 
     # Providers the user has configured at least once.
     known_providers: list[str] = field(default_factory=list)

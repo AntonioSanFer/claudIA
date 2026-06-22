@@ -45,6 +45,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         return cli_main(argv[1:])
 
+    if argv and argv[0] == "logs":
+        return _show_logs(argv[1:])
+
     if argv and argv[0] in ("-h", "--help"):
         _print_top_help()
         return 0
@@ -61,12 +64,35 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 def _print_top_help() -> None:
     print(
-        "claudia — provider bridge for Claude Code\n\n"
+        "claudia - provider bridge for Claude Code\n\n"
         "Usage:\n"
         "  claudia                Launch the interactive TUI.\n"
         "  claudia run [opts]     Headless bridge (see `claudia run --help`).\n"
+        "  claudia logs [N]       Show the last N lines of the proxy log.\n"
         "  claudia --version      Print version.\n"
     )
+
+
+def _show_logs(argv: list[str]) -> int:
+    """Print the tail of the most recent proxy log (M5 logs view)."""
+    from .paths import proxy_log_file
+
+    path = proxy_log_file()
+    if not path.exists():
+        print(f"No proxy log yet at {path}")
+        return 0
+    n = 200
+    if argv:
+        try:
+            n = int(argv[0])
+        except ValueError:
+            print(f"error: expected a line count, got {argv[0]!r}", file=sys.stderr)
+            return 2
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    print(f"# {path} (last {min(n, len(lines))} of {len(lines)} lines)\n")
+    for line in lines[-n:]:
+        print(line)
+    return 0
 
 
 def _run_tui_loop() -> int:
@@ -136,11 +162,25 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
     )
     from textual.widgets.option_list import Option
 
+    from .catalog import list_models
     from .preflight import install_litellm
     from .providers import all_providers, get_provider
 
     class PreflightScreen(Screen):
-        """Resolve claude + ensure LiteLLM before anything else."""
+        """Resolve claude + ensure LiteLLM before anything else.
+
+        Keyboard-navigable: ←/→ (or Tab) move between actions, Enter activates
+        the focused one, and c/s/i/q are direct shortcuts.
+        """
+
+        BINDINGS = [
+            ("left", "focus_previous", "Prev"),
+            ("right", "focus_next", "Next"),
+            ("c", "do_continue", "Continue"),
+            ("s", "do_skip", "Skip next time"),
+            ("i", "do_install", "Install"),
+            ("q", "quit_app", "Quit"),
+        ]
 
         CSS = """
         #log { height: 1fr; border: round $primary; padding: 0 1; }
@@ -160,6 +200,7 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
             with Horizontal(id="buttons"):
                 yield Button("Install LiteLLM", id="install", variant="primary", disabled=True)
                 yield Button("Continue", id="continue", variant="success", disabled=True)
+                yield Button("Skip next time", id="skip", variant="warning", disabled=True)
                 yield Button("Quit", id="quit", variant="error")
             yield Footer()
 
@@ -196,10 +237,13 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
             else:
                 self._log("  [yellow]! LiteLLM proxy not installed.[/yellow]")
                 self._set_disabled("install", False)
+                self.app.call_from_thread(self.query_one("#install", Button).focus)
 
         def _enable_continue(self) -> None:
             self._ready = True
             self._set_disabled("continue", False)
+            self._set_disabled("skip", False)
+            self.app.call_from_thread(self.query_one("#continue", Button).focus)
 
         @work(thread=True)
         def do_install(self) -> None:
@@ -211,13 +255,50 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
             else:
                 self._log("  [red]✗ Install failed. Run: pip install 'litellm[proxy]'[/red]")
 
+        # --- shared actions (used by both buttons and key bindings) ---
+        def _continue(self) -> None:
+            if self._ready:
+                self.dismiss(self.claude_command)
+
+        def _skip(self) -> None:
+            """Persist 'don't show preflight when OK', then continue."""
+            if not self._ready:
+                return
+            cfg = state.load_config()
+            cfg.skip_preflight_when_ok = True
+            state.save_config(cfg)
+            self.notify("Preflight will be skipped next time (unless a problem is found).")
+            self.dismiss(self.claude_command)
+
         def on_button_pressed(self, event: Button.Pressed) -> None:
             if event.button.id == "quit":
                 self.app.exit(None)
             elif event.button.id == "install":
                 self.do_install()
-            elif event.button.id == "continue" and self._ready:
-                self.dismiss(self.claude_command)
+            elif event.button.id == "continue":
+                self._continue()
+            elif event.button.id == "skip":
+                self._skip()
+
+        def action_focus_next(self) -> None:
+            self.focus_next()
+
+        def action_focus_previous(self) -> None:
+            self.focus_previous()
+
+        def action_do_continue(self) -> None:
+            self._continue()
+
+        def action_do_skip(self) -> None:
+            self._skip()
+
+        def action_do_install(self) -> None:
+            btn = self.query_one("#install", Button)
+            if not btn.disabled:
+                self.do_install()
+
+        def action_quit_app(self) -> None:
+            self.app.exit(None)
 
     class ProviderScreen(Screen):
         CSS = """
@@ -320,40 +401,80 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
 
     class ModelScreen(Screen):
         CSS = """
-        #form { padding: 1 2; height: auto; }
+        #form { padding: 1 2; height: 1fr; }
         Label { padding: 1 0 0 0; }
         Input { width: 100%; }
-        #suggested { color: $text-muted; }
+        #status { color: $text-muted; }
+        #models { height: 1fr; min-height: 6; border: round $primary; }
         #buttons { padding: 1 0; align: left middle; height: auto; }
         Button { margin: 0 1 0 0; }
         """
 
-        def __init__(self, provider: Provider) -> None:
+        def __init__(self, provider: Provider, api_key=None, api_base=None) -> None:
             super().__init__()
             self.provider = provider
+            self.api_key = api_key
+            self.api_base = api_base
+            self._all_models: list[str] = []
+            self._programmatic = False  # guard so list-select doesn't re-filter
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
-            yield Static(f"Models — {self.provider.display_name}", classes="title")
+            yield Static(f"Models - {self.provider.display_name}", classes="title")
             cfg = state.load_config()
             default_main = (
                 (cfg.last_main_model if cfg.last_provider == self.provider.id else None)
                 or (self.provider.suggested_models[0] if self.provider.suggested_models else "")
             )
             with VerticalScroll(id="form"):
-                if self.provider.suggested_models:
-                    yield Static(
-                        "Suggested: " + ", ".join(self.provider.suggested_models),
-                        id="suggested",
-                    )
-                yield Label("Main model")
+                yield Static("Loading models…", id="status")
+                yield Label("Main model (type to filter, or pick below)")
                 yield Input(value=default_main, id="main_model", placeholder="model id")
+                yield OptionList(id="models")
                 yield Label("Small/fast model (blank = reuse main)")
                 yield Input(value="", id="small_model", placeholder="optional")
             with Horizontal(id="buttons"):
                 yield Button("Launch", id="launch", variant="success")
                 yield Button("Back", id="back")
             yield Footer()
+
+        def on_mount(self) -> None:
+            self.fetch_models()
+
+        @work(thread=True)
+        def fetch_models(self) -> None:
+            catalog = list_models(self.provider, self.api_key, self.api_base)
+            self.app.call_from_thread(self._apply_catalog, catalog)
+
+        def _apply_catalog(self, catalog) -> None:
+            self._all_models = catalog.models
+            status = self.query_one("#status", Static)
+            if catalog.is_live:
+                status.update(f"[green]{len(catalog.models)} models (live)[/green]")
+            else:
+                why = f" - {catalog.error}" if catalog.error else ""
+                status.update(
+                    f"[yellow]{len(catalog.models)} models (preloaded{why})[/yellow]"
+                )
+            # Show the whole catalog on load; only narrow once the user types.
+            self._populate("")
+
+        def _populate(self, needle: str) -> None:
+            ol = self.query_one("#models", OptionList)
+            ol.clear_options()
+            needle = needle.lower()
+            shown = [m for m in self._all_models if needle in m.lower()] if needle else self._all_models
+            for model_id in shown[:500]:  # cap for responsiveness
+                ol.add_option(Option(model_id, id=model_id))
+
+        def on_input_changed(self, event: Input.Changed) -> None:
+            if event.input.id == "main_model" and not self._programmatic:
+                self._populate(event.value.strip())
+
+        def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+            self._programmatic = True
+            self.query_one("#main_model", Input).value = event.option.id or ""
+            self._programmatic = False
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             if event.button.id == "back":
@@ -376,9 +497,23 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
         def on_mount(self) -> None:
             self.run_wizard()
 
+        async def _preflight(self) -> Optional[str]:
+            """Resolve claude (and verify LiteLLM), showing the preflight screen
+            unless the user opted to skip it AND everything checks out.
+
+            Returns the resolved claude command, or None to abort.
+            """
+            cfg = state.load_config()
+            if cfg.skip_preflight_when_ok:
+                # Run the checks silently; only surface the screen on a problem.
+                claude_command = resolve_claude(cfg.claude_command)
+                if claude_command and check_litellm().ready:
+                    return claude_command
+            return await self.push_screen_wait(PreflightScreen())
+
         @work
         async def run_wizard(self) -> None:
-            claude_command = await self.push_screen_wait(PreflightScreen())
+            claude_command = await self._preflight()
             if not claude_command:
                 self.exit(None)
                 return
@@ -393,7 +528,9 @@ def _build_tui_classes():  # pragma: no cover - requires textual at runtime
                 cred = await self.push_screen_wait(CredentialScreen(provider))
                 if cred is False:  # back
                     continue
-                models = await self.push_screen_wait(ModelScreen(provider))
+                models = await self.push_screen_wait(
+                    ModelScreen(provider, cred["api_key"], cred["api_base"])
+                )
                 if models is False:  # back
                     continue
 

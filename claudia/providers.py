@@ -28,8 +28,16 @@ class Provider:
         auth: One of AUTH_API_KEY / AUTH_OAUTH / AUTH_NONE.
         requires_api_base: Whether an `api_base` must be supplied by the user.
         default_api_base: Pre-filled `api_base` suggestion (e.g. Ollama).
-        suggested_models: Bare model ids to pre-populate the model picker.
+        suggested_models: Bare model ids; the *preloaded* fallback list and the
+            seed for the picker before/without a live fetch.
         notes: Short free-text shown in the UI.
+        models_url: Endpoint to GET a live model list. May contain a literal
+            ``{api_base}`` placeholder (Ollama / custom). None disables live
+            fetch (falls back to suggested_models).
+        models_style: Response shape — "openai" (data[].id) or "ollama"
+            (models[].name).
+        models_auth: Whether to send ``Authorization: Bearer <key>`` when
+            fetching the model list.
     """
 
     id: str
@@ -40,6 +48,9 @@ class Provider:
     default_api_base: Optional[str] = None
     suggested_models: tuple[str, ...] = field(default_factory=tuple)
     notes: str = ""
+    models_url: Optional[str] = None
+    models_style: str = "openai"
+    models_auth: bool = True
 
     @property
     def needs_api_key(self) -> bool:
@@ -72,6 +83,7 @@ _PROVIDERS: tuple[Provider, ...] = (
             "meta-llama/llama-3.3-70b-instruct",
         ),
         notes="Gateway to many models behind a single key.",
+        models_url="https://openrouter.ai/api/v1/models",
     ),
     Provider(
         id="deepseek",
@@ -80,6 +92,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         auth=AUTH_API_KEY,
         suggested_models=("deepseek-chat", "deepseek-reasoner"),
         notes="Direct DeepSeek API.",
+        models_url="https://api.deepseek.com/models",
     ),
     Provider(
         id="groq",
@@ -92,6 +105,7 @@ _PROVIDERS: tuple[Provider, ...] = (
             "openai/gpt-oss-120b",
         ),
         notes="Very fast inference.",
+        models_url="https://api.groq.com/openai/v1/models",
     ),
     Provider(
         id="mistral",
@@ -99,6 +113,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         prefix="mistral/",
         auth=AUTH_API_KEY,
         suggested_models=("mistral-large-latest", "codestral-latest"),
+        models_url="https://api.mistral.ai/v1/models",
     ),
     Provider(
         id="together_ai",
@@ -107,6 +122,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         auth=AUTH_API_KEY,
         suggested_models=("deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-Coder-32B-Instruct"),
         notes="Open models.",
+        models_url="https://api.together.xyz/v1/models",
     ),
     Provider(
         id="fireworks_ai",
@@ -115,6 +131,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         auth=AUTH_API_KEY,
         suggested_models=("accounts/fireworks/models/deepseek-v3",),
         notes="Open models.",
+        models_url="https://api.fireworks.ai/inference/v1/models",
     ),
     Provider(
         id="openai",
@@ -122,6 +139,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         prefix="openai/",
         auth=AUTH_API_KEY,
         suggested_models=("gpt-4o", "gpt-4o-mini", "o4-mini"),
+        models_url="https://api.openai.com/v1/models",
     ),
     Provider(
         id="azure",
@@ -131,6 +149,8 @@ _PROVIDERS: tuple[Provider, ...] = (
         requires_api_base=True,
         suggested_models=("gpt-4o", "gpt-4o-mini"),
         notes="Needs api_base (your Azure endpoint) and a deployment name.",
+        # Azure lists *deployments*, not models, via a mgmt API — skip live fetch.
+        models_url=None,
     ),
     Provider(
         id="github_copilot",
@@ -139,6 +159,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         auth=AUTH_OAUTH,
         suggested_models=("gpt-4o", "claude-3.5-sonnet"),
         notes="Uses your Copilot subscription auth, not a plain API key.",
+        models_url=None,
     ),
     Provider(
         id="ollama",
@@ -149,6 +170,9 @@ _PROVIDERS: tuple[Provider, ...] = (
         default_api_base="http://localhost:11434",
         suggested_models=("llama3.1", "qwen2.5-coder", "deepseek-coder-v2"),
         notes="Local models; point api_base at your Ollama server.",
+        models_url="{api_base}/api/tags",
+        models_style="ollama",
+        models_auth=False,
     ),
     Provider(
         id="custom",
@@ -157,6 +181,7 @@ _PROVIDERS: tuple[Provider, ...] = (
         auth=AUTH_API_KEY,
         requires_api_base=True,
         notes="Any OpenAI-compatible endpoint; supply api_base.",
+        models_url="{api_base}/models",
     ),
 )
 
