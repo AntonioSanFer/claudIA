@@ -1,0 +1,5 @@
+## pycache
+
+.pytest_cache
+claudia/__pycache__
+tests/__pycache__

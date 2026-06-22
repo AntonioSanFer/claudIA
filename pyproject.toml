@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudia"
+version = "0.3.0"
+description = "Provider bridge for Claude Code — run Claude Code against any LLM provider via a local LiteLLM proxy."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ClaudIA contributors" }]
+keywords = ["claude", "claude-code", "litellm", "llm", "proxy", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "textual>=0.60",
+    "platformdirs>=3.0",
+    "keyring>=24.0",
+]
+
+[project.optional-dependencies]
+# The proxy itself. Kept optional so ClaudIA can detect+auto-install it (M2)
+# rather than forcing it at install time.
+proxy = ["litellm[proxy]>=1.40"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+claudia = "claudia.app:main"
+
+[project.urls]
+Homepage = "https://github.com/claudia-bridge/claudia"
+
+[tool.setuptools.packages.find]
+include = ["claudia*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
