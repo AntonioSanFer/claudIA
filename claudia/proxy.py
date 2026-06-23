@@ -52,13 +52,32 @@ class ProxyManager:
         self._log_handle = None
 
     # -- command ------------------------------------------------------------
+    @staticmethod
+    def _venv_litellm() -> Optional[str]:
+        """Find the `litellm` console script next to the running interpreter.
+
+        `pipx inject claudia 'litellm[proxy]'` installs the script into the
+        claudia venv's bin/Scripts dir, which is not necessarily on PATH when
+        claudia is launched through its own shim — so `shutil.which` can miss it.
+        """
+        bindir = Path(sys.executable).parent
+        names = ["litellm.exe", "litellm"] if sys.platform == "win32" else ["litellm"]
+        for name in names:
+            candidate = bindir / name
+            if candidate.exists():
+                return str(candidate)
+        return None
+
     def _command(self) -> list[str]:
         """Resolve how to invoke the litellm proxy.
 
-        Prefer the console script if on PATH; otherwise `python -m litellm`.
+        Prefer the `litellm` console script — first on PATH, then inside this
+        interpreter's own venv. Fall back to running the proxy CLI module
+        directly: `litellm` ships no top-level `__main__`, so `python -m litellm`
+        fails; the executable module is `litellm.proxy.proxy_cli`.
         """
-        cli = shutil.which("litellm")
-        base = [cli] if cli else [sys.executable, "-m", "litellm"]
+        cli = shutil.which("litellm") or self._venv_litellm()
+        base = [cli] if cli else [sys.executable, "-m", "litellm.proxy.proxy_cli"]
         return [
             *base,
             "--config",
