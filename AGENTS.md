@@ -114,6 +114,15 @@ adding one table row; no code changes elsewhere.
 Takes the user's selection and emits a LiteLLM `config.yaml` (see §6). Maps
 **every** model tier Claude Code may request to the chosen provider model(s).
 
+The `model_name` aliases are **recognised Anthropic model ids**
+(`claude-sonnet-4-6`, `claude-haiku-4-5-20251001`), not custom labels such as
+`claudia-main` / `claudia-small`. Claude Code's agents view validates the model
+id against the known Anthropic catalogue *before* the request reaches the proxy
+and rejects anything it doesn't recognise — a custom name breaks subagents even
+though the interactive session would accept it. The alias is only a client-side
+label; LiteLLM still routes it (and the `"*"` catch-all) to the provider model
+the user actually selected. Bump these ids when Anthropic ships newer tiers.
+
 ### 5.4 Proxy manager (`claudia/proxy.py`)
 - Start: `litellm --config <generated> --port <port> --host 127.0.0.1`
   (or start the proxy in-process via LiteLLM's ASGI app for tighter control).
@@ -145,20 +154,21 @@ Bind to `127.0.0.1` only — the proxy must never be reachable off-host.
 ```yaml
 model_list:
   # Main model — what ANTHROPIC_MODEL points Claude Code at.
-  - model_name: claudia-main
+  - model_name: claude-sonnet-4-6
     litellm_params:
       model: openrouter/deepseek/deepseek-chat
       api_key: os.environ/CLAUDIA_PROVIDER_KEY
       # api_base: os.environ/CLAUDIA_PROVIDER_BASE   # when provider needs it
 
   # Small/fast model — Claude Code's background tasks (titles, git, etc.).
-  - model_name: claudia-small
+  - model_name: claude-haiku-4-5-20251001
     litellm_params:
       model: openrouter/deepseek/deepseek-chat
       api_key: os.environ/CLAUDIA_PROVIDER_KEY
 
 litellm_settings:
   drop_params: true          # silently drop Anthropic params the target can't take
+  telemetry: false           # opt out of LiteLLM anonymous usage telemetry
   # num_retries, request_timeout, etc. as needed
 
 general_settings:
@@ -170,6 +180,11 @@ general_settings:
 > requests 404 at the proxy and Claude Code surfaces confusing errors. A
 > catch-all (`model_name: "*"`) is an acceptable convenience but explicit
 > aliases are clearer and safer.
+
+> **Note:** the `model_name` values above are recognised Anthropic model ids, not
+> custom labels like `claudia-main`. Claude Code rejects unrecognised ids before
+> the call reaches the proxy, which would break subagents — see §5.3 for the full
+> rationale.
 
 The provider API key and the proxy master key are passed to the LiteLLM process
 via environment variables (`os.environ/...` references in the YAML), **never
@@ -191,7 +206,7 @@ entry so LiteLLM routes the request to `/v1/responses`. This keeps the reasoning
 slider working instead of having `drop_params` silently strip `reasoning_effort`.
 
 ```yaml
-  - model_name: claudia-main
+  - model_name: claude-sonnet-4-6
     model_info:
       mode: responses          # -> /v1/responses instead of /chat/completions
     litellm_params:
@@ -242,11 +257,17 @@ installer, etc.) — ClaudIA does not perform this install.
 |---|---|---|
 | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:<port>` | Route Claude Code through the proxy. |
 | `ANTHROPIC_AUTH_TOKEN` | the LiteLLM master key | Sent as `Authorization: Bearer`; satisfies Claude Code's auth requirement and the proxy's. |
-| `ANTHROPIC_MODEL` | `claudia-main` | Main model alias (matches `model_list`). |
-| `ANTHROPIC_SMALL_FAST_MODEL` | `claudia-small` | Background/small-task model alias. |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | Main model alias (matches `model_list`). |
+| `ANTHROPIC_SMALL_FAST_MODEL` | `claude-haiku-4-5-20251001` | Background/small-task model alias. |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` / `..._SONNET_MODEL` / `..._HAIKU_MODEL` | aliases | Map Claude Code's in-app `/model` tiers onto our aliases (set where supported by the installed version). |
+| `DISABLE_TELEMETRY` / `DISABLE_ERROR_REPORTING` | `1` | Opt out of Claude Code's telemetry and Sentry error reporting — reports to Anthropic infra are meaningless when pointed at a third-party provider (`setdefault`, so a user override wins). |
 
 Notes:
+- The model aliases are **real Anthropic model ids, not custom names** (see §5.3).
+  Claude Code validates the requested id against its known catalogue before the
+  call reaches the proxy, so an invented label like `claudia-main` would be
+  rejected by the agents view and break subagents; LiteLLM routes the recognised
+  id to the provider model regardless.
 - Prefer `ANTHROPIC_AUTH_TOKEN` (Bearer) over `ANTHROPIC_API_KEY` (`x-api-key`)
   for proxy auth; do not set both (Claude Code rejects having both).
 - These are set **only for the spawned child**, never exported globally.
@@ -290,7 +311,7 @@ and a few suggested model ids to pre-populate the picker.
    unsupported. Free-text entry is always allowed. Optionally choose a distinct
    small/fast model (default: reuse main). See `claudia/catalog.py`.
 5. **Launch** — generate config → start proxy → health-gate → spawn `claude`.
-   Show the effective mapping ("Claude Code → claudia-main → openrouter/…").
+   Show the effective mapping ("Claude Code → claude-sonnet-4-6 → openrouter/…").
 6. **Running** — hand the terminal to Claude Code. On its exit, return to a
    summary screen (relaunch / change provider / quit).
 

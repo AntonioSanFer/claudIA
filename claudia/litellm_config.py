@@ -61,7 +61,7 @@ def _yaml_quote(value: str) -> str:
 def _alias_repr(alias: str) -> str:
     """Render a model_name alias, quoting it when YAML needs it.
 
-    Plain identifiers (claudia-main) stay bare; the catch-all "*" MUST be quoted
+    Plain identifiers (claude-sonnet-4-6) stay bare; the catch-all "*" MUST be quoted
     because a bare `*` is a YAML alias indicator and fails to parse.
     """
     if alias.replace("-", "").replace("_", "").isalnum():
@@ -129,6 +129,7 @@ def generate_config(selection: Selection) -> str:
         "litellm_settings:",
         "  drop_params: true          # silently drop Anthropic params the target can't take",
         "  num_retries: 2",
+        "  telemetry: false           # opt out of LiteLLM anonymous usage telemetry",
         "",
         "general_settings:",
         f"  master_key: {_yaml_quote('os.environ/' + MASTER_KEY_ENV)}",

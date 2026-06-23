@@ -126,7 +126,13 @@ to force the preloaded set).
 
 1. You pick a provider + model and supply credentials (remembered for next time).
 2. ClaudIA writes a LiteLLM `config.yaml` (under your per-user data dir) that maps
-   `claudia-main` / `claudia-small` (and a `"*"` catch-all) onto the provider model.
+   `claude-sonnet-4-6` / `claude-haiku-4-5-20251001` (and a `"*"` catch-all) onto
+   the provider model. These aliases are **real Anthropic model ids, not custom
+   names** like `claudia-main`: Claude Code's agents view validates the model id
+   against the known Anthropic catalogue *before* the request reaches the proxy,
+   and rejects anything it doesn't recognise ("It may not exist or you may not
+   have access to it"), which breaks subagents. Using recognised ids and letting
+   LiteLLM route them to the provider keeps every surface working.
    **No secrets are written to disk** — the provider key and proxy master key are
    passed to the LiteLLM process via environment variables (`os.environ/...`
    references in the YAML).

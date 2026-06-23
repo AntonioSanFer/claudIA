@@ -2,7 +2,12 @@
 
 from claudia import secrets as secret_store
 from claudia import state
-from claudia.launcher import build_claude_env, build_proxy_env, generate_master_key
+from claudia.constants import MAIN_ALIAS, SMALL_ALIAS
+from claudia.launcher import (
+    build_claude_env,
+    build_proxy_env,
+    generate_master_key,
+)
 from claudia.litellm_config import Selection
 
 
@@ -17,13 +22,36 @@ def test_build_claude_env_sets_required_vars():
     env = build_claude_env("http://127.0.0.1:4000", "sk-master", base_env={})
     assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:4000"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "sk-master"
-    assert env["ANTHROPIC_MODEL"] == "claudia-main"
-    assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "claudia-small"
+    assert env["ANTHROPIC_MODEL"] == MAIN_ALIAS
+    assert env["ANTHROPIC_SMALL_FAST_MODEL"] == SMALL_ALIAS
 
 
 def test_build_claude_env_drops_api_key():
     env = build_claude_env("http://x", "k", base_env={"ANTHROPIC_API_KEY": "leak"})
     assert "ANTHROPIC_API_KEY" not in env  # never both auth styles
+
+
+def test_build_claude_env_disables_telemetry_and_error_reporting():
+    env = build_claude_env("http://x", "k", base_env={})
+    assert env["DISABLE_TELEMETRY"] == "1"
+    assert env["DISABLE_ERROR_REPORTING"] == "1"
+    # Autoupdater and nonessential model calls are intentionally left enabled.
+    assert "DISABLE_AUTOUPDATER" not in env
+    assert "DISABLE_NON_ESSENTIAL_MODEL_CALLS" not in env
+    assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in env
+
+
+def test_build_claude_env_respects_user_override():
+    env = build_claude_env("http://x", "k", base_env={"DISABLE_TELEMETRY": "0"})
+    assert env["DISABLE_TELEMETRY"] == "0"  # setdefault keeps an explicit choice
+
+
+def test_build_proxy_env_disables_telemetry_traffic():
+    sel = Selection(provider_id="openrouter", main_model="deepseek/deepseek-chat")
+    env = build_proxy_env(sel, "sk-provider", "sk-master", base_env={})
+    assert env["LITELLM_DONT_SHOW_FEEDBACK_BOX"] == "True"
+    # The bundled cost map is left disabled (pricing JSON fetched as usual).
+    assert "LITELLM_LOCAL_MODEL_COST_MAP" not in env
 
 
 def test_build_proxy_env_carries_secrets():

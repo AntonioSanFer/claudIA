@@ -83,6 +83,11 @@ def test_drop_params_enabled():
     assert "drop_params: true" in generate_config(sel)
 
 
+def test_telemetry_disabled():
+    sel = Selection(provider_id="deepseek", main_model="deepseek-chat")
+    assert "telemetry: false" in generate_config(sel)
+
+
 def test_copilot_responses_mode_on_main():
     sel = Selection(provider_id="github_copilot", main_model="gpt-5.4")
     cfg = generate_config(sel)

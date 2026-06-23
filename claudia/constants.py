@@ -16,8 +16,17 @@ MASTER_KEY_ENV = "CLAUDIA_MASTER_KEY"
 # --- Model aliases exposed to Claude Code -----------------------------------
 # These are the `model_name` entries in the generated model_list and the values
 # Claude Code is pointed at via ANTHROPIC_MODEL / ANTHROPIC_SMALL_FAST_MODEL.
-MAIN_ALIAS = "claudia-main"
-SMALL_ALIAS = "claudia-small"
+#
+# They MUST be real Anthropic model identifiers, not invented names: Claude
+# Code's agents view (and other surfaces) validate the model id against the
+# known Anthropic catalogue *before* hitting the proxy, and reject anything it
+# doesn't recognise ("It may not exist or you may not have access to it"). The
+# interactive session trusts ANTHROPIC_MODEL, but the agents view does not — so
+# a name like "claudia-main" breaks subagents. We expose recognised ids here and
+# let LiteLLM route them (and the "*" catch-all) to the chosen provider model.
+# Bump these when Anthropic ships newer tier ids.
+MAIN_ALIAS = "claude-sonnet-4-6"
+SMALL_ALIAS = "claude-haiku-4-5-20251001"
 
 # --- Proxy defaults ---------------------------------------------------------
 DEFAULT_PORT = 4000

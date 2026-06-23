@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from . import state
+from .constants import MAIN_ALIAS, SMALL_ALIAS
 from .launcher import (
     build_claude_env,
     build_proxy_env,
@@ -115,8 +116,8 @@ def run_bridge(
 
 
 def selection_summary(selection: Selection) -> str:
-    """One-line 'claudia-main -> provider/model' style summary."""
-    main = f"claudia-main -> {selection.main_target}"
+    """One-line '<main-alias> -> provider/model' style summary."""
+    main = f"{MAIN_ALIAS} -> {selection.main_target}"
     if selection.effective_small_model != selection.main_model:
-        return f"{main}; claudia-small -> {selection.small_target}"
+        return f"{main}; {SMALL_ALIAS} -> {selection.small_target}"
     return main

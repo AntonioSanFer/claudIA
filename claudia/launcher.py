@@ -44,6 +44,11 @@ def build_proxy_env(
     # on a Windows (cp1252) console. (AGENTS.md §14 Windows handling.)
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
+    # Suppress LiteLLM's nonessential traffic and chatter:
+    #   * telemetry is also turned off in the generated config (litellm_settings),
+    #     this covers the env-level switch too;
+    #   * the feedback box is cosmetic noise on a launcher-driven proxy.
+    env.setdefault("LITELLM_DONT_SHOW_FEEDBACK_BOX", "True")
     env[MASTER_KEY_ENV] = master_key
     if api_key:
         env[PROVIDER_KEY_ENV] = api_key
@@ -75,6 +80,13 @@ def build_claude_env(
     env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = MAIN_ALIAS
     env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = MAIN_ALIAS
     env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = SMALL_ALIAS
+
+    # Disable Claude Code's telemetry and error reporting. When ClaudIA points
+    # Claude Code at a third-party provider, reports to Anthropic infrastructure
+    # are both unwanted and meaningless. Each is a setdefault so a user who
+    # deliberately re-enables one in their own environment keeps it.
+    env.setdefault("DISABLE_TELEMETRY", "1")
+    env.setdefault("DISABLE_ERROR_REPORTING", "1")
 
     return env
 
