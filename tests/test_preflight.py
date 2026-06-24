@@ -71,6 +71,9 @@ def test_install_command_prefers_uv(monkeypatch):
     cmd = preflight._install_command()
     assert cmd[0] == "uv"
     assert "litellm[proxy]" in cmd
+    # Must target this interpreter so it works under pipx (no active venv).
+    assert "--python" in cmd
+    assert cmd[cmd.index("--python") + 1] == preflight.sys.executable
 
 
 def test_install_command_falls_back_to_pip(monkeypatch):

@@ -104,9 +104,22 @@ def check_litellm() -> LiteLLMStatus:
 
 
 def _install_command() -> list[str]:
-    """Preferred install command: uv if available, else pip into this env."""
+    """Preferred install command: uv if available, else pip into this env.
+
+    `uv pip install` refuses to run without an active virtualenv (or `--system`),
+    which breaks under a pipx-installed claudia where neither is set. Pointing uv
+    at the current interpreter with `--python` makes it install into *this*
+    environment regardless, matching what plain `pip` would do.
+    """
     if shutil.which("uv"):
-        return ["uv", "pip", "install", "litellm[proxy]"]
+        return [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "litellm[proxy]",
+        ]
     return [sys.executable, "-m", "pip", "install", "litellm[proxy]"]
 
 
