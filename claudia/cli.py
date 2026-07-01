@@ -87,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Never hit the network for model lists; use preloaded models.",
     )
     parser.add_argument(
+        "--dangerously-skip-permissions",
+        action="store_true",
+        help="Launch Claude Code with --dangerously-skip-permissions (bypasses all permission prompts).",
+    )
+    parser.add_argument(
         "claude_args",
         nargs=argparse.REMAINDER,
         help="Arguments after `--` are forwarded to claude.",
@@ -274,6 +279,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     print()
 
     extra = _strip_leading_dashdash(args.claude_args)
+    if args.dangerously_skip_permissions:
+        extra = ["--dangerously-skip-permissions", *extra]
     result = run_bridge(
         selection=selection,
         api_key=api_key,

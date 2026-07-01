@@ -24,6 +24,7 @@ def test_build_claude_env_sets_required_vars():
     assert env["ANTHROPIC_AUTH_TOKEN"] == "sk-master"
     assert env["ANTHROPIC_MODEL"] == MAIN_ALIAS
     assert env["ANTHROPIC_SMALL_FAST_MODEL"] == SMALL_ALIAS
+    assert env["CLAUDE_CODE_SUBAGENT_MODEL"] == MAIN_ALIAS
 
 
 def test_build_claude_env_drops_api_key():

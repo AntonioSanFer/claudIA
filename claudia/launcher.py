@@ -80,6 +80,10 @@ def build_claude_env(
     env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = MAIN_ALIAS
     env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = MAIN_ALIAS
     env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = SMALL_ALIAS
+    # Subagent model override — forces all subagents (including those spawned
+    # by the background daemon) to use the main alias, which is routed through
+    # the LiteLLM proxy instead of hitting api.anthropic.com directly.
+    env["CLAUDE_CODE_SUBAGENT_MODEL"] = MAIN_ALIAS
 
     # Disable Claude Code's telemetry and error reporting. When ClaudIA points
     # Claude Code at a third-party provider, reports to Anthropic infrastructure

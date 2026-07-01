@@ -25,6 +25,7 @@ from .oauth import ensure_oauth_login
 from .paths import generated_config_file
 from .proxy import ProxyManager
 from .secrets import mask
+from .settings_proxy import SettingsProxy
 
 Reporter = Callable[[str], None]
 
@@ -98,12 +99,27 @@ def run_bridge(
             f"Mapping: Claude Code -> {selection_summary(selection)} "
             f"(key {mask(api_key)})"
         )
-        report("Launching Claude Code - handing over the terminal...\n")
 
-        claude_env = build_claude_env(proxy.base_url, master_key)
-        code = launch_claude(claude_command, claude_env, extra_claude_args)
-        report(f"\nClaude Code exited (code {code}).")
-        return BridgeResult(code, port, proxy.base_url)
+        # Inject proxy routing into ~/.claude/settings.json so the background
+        # daemon (agents, subagents, scheduled tasks) also routes through the
+        # LiteLLM proxy instead of hitting api.anthropic.com directly.
+        settings_mgr = SettingsProxy(
+            base_url=proxy.base_url,
+            auth_token=master_key,
+            main_model=MAIN_ALIAS,
+            small_model=SMALL_ALIAS,
+            subagent_model=MAIN_ALIAS,
+        )
+        with settings_mgr:
+            if settings_mgr.injected:
+                report("Proxy routing injected into Claude Code settings.")
+
+            report("Launching Claude Code - handing over the terminal...\n")
+
+            claude_env = build_claude_env(proxy.base_url, master_key)
+            code = launch_claude(claude_command, claude_env, extra_claude_args)
+            report(f"\nClaude Code exited (code {code}).")
+            return BridgeResult(code, port, proxy.base_url)
     finally:
         proxy.stop()
         state.clear_runtime()
